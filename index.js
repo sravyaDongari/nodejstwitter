@@ -108,61 +108,70 @@ WHERE tweet.tweet_id = '${tweetId}' AND follower_user_id = '${userId}';`
 
 // API-1
 
-app.post('/register/', async (request, response) => {
+
+app.post('/register', async (request, response) => {
   const {username, password, name, gender} = request.body
 
-  const getUserQuery = `SELECT * FROM user WHERE username = '${username}'`
+  const getUserQuery = `SELECT * FROM user WHERE username = '${username}';`
+  console.log(username, password, name, gender)
   const userDBDetails = await db.get(getUserQuery)
 
-  if (userDBDetails !== undefined) {
-    response.status(400)
-    response.send('User already exists')
-  } else {
+  if (userDBDetails === undefined) {
     if (password.length < 6) {
-      response.status(408)
-
+      response.status(400)
       response.send('Password is too short')
     } else {
       const hashedPassword = await bcrypt.hash(password, 10)
-      const createUserQuery = `INSERT INTO user(username, password, name, gender)
-VALUES('${username}', '${hashedPassword}','${name}','${gender}'}`
-
+      const createUserQuery = `INSERT INTO 
+    user(username, password, name, gender)
+VALUES('${name}','${username}', '${hashedPassword}','${gender}');`
       await db.run(createUserQuery)
+      response.status(200)
       response.send('User created successfully')
     }
+  } else {
+    response.status(400)
+    response.send('User already exists')
   }
 })
 
 // API-2
 
-app.post('/login/', async (request, response) => {
-  const {username, password} = request.body
+app.post("/login", async (request, response)=> {
 
-  const getUserQuery = `SELECT * FROM user WHERE username='${username}';`
+const { username, password }= request.body;
 
-  const userDbDetails = await db.get(getUserQuery)
+const selectUserQuery = `SELECT * FROM user WHERE username = '${username}';`;
 
-  if (userDbDetails !== undefined) {
-    const isPasswordCorrect = await bcrypt.compare(
-      password,
-      userDbDetails.password,
-    )
+console.log(username, password);
 
-    if (isPasswordCorrect) {
-      const payload = {username, userId: userDbDetails.user_id}
-      const jwtToken = jwt.sign(payload, 'SECRET KEY')
+const dbUser =await db.get(selectUserQuery);
 
-      response.send({jwtToken})
-    } else {
-      response.status(400)
-      response.send('Invalid password')
-    }
-  } else {
-    response.status(400)
-    response.send('Invalid user')
-  }
-})
+console.log(dbUser);
+ if (dbUser ===undefined) {
 
+response.status(400);
+
+response.send("Invalid user");
+
+} else {
+const isPasswordMatched = await bcrypt.compare(password, dbUser.password);
+
+if (isPasswordMatched=== true) {
+
+const jwtToken = jwt.sign(dbUser, "MY_SECRET_TOKEN");
+
+response.send({ jwtToken });
+
+} else {
+
+response.status(400);
+
+response.send("Invalid password");
+}
+}
+});
+//api3
 app.get('/user/tweets/feed/', authentication, async (request, response) => {
   const {username} = request
 
@@ -280,18 +289,18 @@ app.post('/user/tweets/', authentication, async (request, response) => {
 
   const dateTime = new Date().toJSON().substring(0, 19).replace('T', '')
 
-  const createTweetQuery = ` INSERT INTO tweet(tweet, user id, date_time)
+  const createTweetQuery = ` INSERT INTO tweet(tweet, user_id, date_time)
  VALUES('${tweet}', '${userId}', '${dateTime}')`
 
   await db.run(createTweetQuery)
   response.send('Created a Tweet')
 })
-
+//delete
 app.delete('/tweets/:tweetId/', authentication, async (request, response) => {
   const {tweetId} = request.params
   const {userId} = request
 
-  const getTheTweetQuery = `SELECT * FROM tweet WHERE user id = '${userId}' AND tweet_id = '${tweetId}';`
+  const getTheTweetQuery = `SELECT * FROM tweet WHERE user_id = '${userId}' AND tweet_id = '${tweetId}';`
 
   const tweet = await db.get(getTheTweetQuery)
 
@@ -301,7 +310,7 @@ app.delete('/tweets/:tweetId/', authentication, async (request, response) => {
     response.status(401)
     response.send('Invalid Request')
   } else {
-    const deleteTweetQuery = `DELETE FROM tweet WHERE tweet id='${tweetId}';`
+    const deleteTweetQuery = `DELETE FROM tweet WHERE tweet.user_id =${userId} AND tweet.tweet_id =${tweetId};`
 
     await db.run(deleteTweetQuery)
     response.send('Tweet Removed')
