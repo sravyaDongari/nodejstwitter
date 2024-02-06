@@ -122,10 +122,8 @@ app.post('/register', async (request, response) => {
       response.send('Password is too short')
     } else {
       const hashedPassword = await bcrypt.hash(password, 10)
-      const createUserQuery = `INSERT INTO 
-    user(username, password, name, gender)
-VALUES('${name}','${username}', '${hashedPassword}','${gender}');`
-      await db.run(createUserQuery)
+      const createUserQuery = `INSERT INTO user(name, username, password ,gender) VALUES('${name}','${username}', '${hashedPassword}','${gender}');`﻿;                          
+await db.run(createUserQuery);
       response.status(200)
       response.send('User created successfully')
     }
