@@ -55,30 +55,25 @@ INNER JOIN user ON user.user_id = follower.follower_user_id
 
 const authentication = (request, response, next) => {
   let jwtToken
-
   const authHeader = request.headers['authorization']
-
-  if (authHeader) {
+  if (authHeader !== undefined) {
     jwtToken = authHeader.split(' ')[1]
   }
-
-  if (jwtToken) {
-    jwt.verify(jwtToken, 'SECRET_KEY', (error, payload) => {
+  if (jwtToken === undefined) {
+    response.status(401)
+    response.send('Invalid JWT Token')
+  } else {
+    jwt.verify(jwtToken, 'SECRET_KEY', async (error, payload) => {
       if (error) {
         response.status(401)
-
         response.send('Invalid JWT Token')
       } else {
-        request.username = payload.username
-        request.userId = payload.userId
-
+        request.payload = payload
+        request.tweet = tweet
+        request.tweetId = tweetId
         next()
       }
     })
-  } else {
-    response.status(401)
-
-    response.send('Invalid JWT Token')
   }
 }
 
@@ -106,8 +101,7 @@ WHERE tweet.tweet_id = '${tweetId}' AND follower_user_id = '${userId}';`
   }
 }
 
-// API-1
-
+// API-1-correct
 
 app.post('/register', async (request, response) => {
   const {username, password, name, gender} = request.body
@@ -121,9 +115,9 @@ app.post('/register', async (request, response) => {
       response.status(400)
       response.send('Password is too short')
     } else {
-      const hashedPassword = await bcrypt.hash(password, 10)
-      const createUserQuery = `INSERT INTO user(name, username, password ,gender) VALUES('${name}','${username}', '${hashedPassword}','${gender}');`﻿;                          
-await db.run(createUserQuery);
+      const hashedPassword = await bcrypt.hash(request.body.password, 10)
+      const createUserQuery = `INSERT INTO user(name, username, password ,gender) VALUES('${name}','${username}', '${hashedPassword}','${gender}');`
+      await db.run(createUserQuery)
       response.status(200)
       response.send('User created successfully')
     }
@@ -133,62 +127,62 @@ await db.run(createUserQuery);
   }
 })
 
-// API-2
+// API-2-correct
 
-app.post("/login", async (request, response)=> {
+app.post('/login', async (request, response) => {
+  const {username, password} = request.body
 
-const { username, password }= request.body;
+  const selectUserQuery = `SELECT * FROM user WHERE username = '${username}';`
 
-const selectUserQuery = `SELECT * FROM user WHERE username = '${username}';`;
+  console.log(username, password)
 
-console.log(username, password);
+  const dbUser = await db.get(selectUserQuery)
 
-const dbUser =await db.get(selectUserQuery);
+  console.log(dbUser)
+  if (dbUser === undefined) {
+    response.status(400)
 
-console.log(dbUser);
- if (dbUser ===undefined) {
+    response.send('Invalid user')
+  } else {
+    const isPasswordMatched = await bcrypt.compare(password, dbUser.password)
 
-response.status(400);
+    if (isPasswordMatched === true) {
+      const payload = {username: username}
 
-response.send("Invalid user");
+      const jwtToken = jwt.sign(payload, 'SECRET_KEY')
 
-} else {
-const isPasswordMatched = await bcrypt.compare(password, dbUser.password);
+      response.send({jwtToken})
+    } else {
+      response.status(400)
 
-if (isPasswordMatched=== true) {
+      response.send('Invalid password')
+    }
+  }
+})
 
-const jwtToken = jwt.sign(dbUser, "MY_SECRET_TOKEN");
-
-response.send({ jwtToken });
-
-} else {
-
-response.status(400);
-
-response.send("Invalid password");
-}
-}
-});
 //api3
+const tweetResponse = dbObject => ({
+  username: dbObject.username,
+  tweet: dbObject.tweet,
+  dateTime: dbObject.dateTime,
+})
 app.get('/user/tweets/feed/', authentication, async (request, response) => {
-  const {username} = request
+  const getTweetsQuery = await db.all(`SELECT user.username, 
+  tweet.tweet_id,tweet.user_id,user.username,tweet.tweet, tweet.date_time  FROM 
+  follower left join tweet on tweet.user_id=following_user_id left join user on follower.following_user_id=user.user_id where follower.follower_user-id=(select user_id from user where username='${request.username}') order by tweet.date_time desc limit 4 ;
+  `)
 
-  const followingPeopleIds = await getFollowingPeopleIdsOfUser(username)
-
-  const getTweetsQuery = `SELECT username, tweet, date_time as dateTime FROM user INNER JOIN tweet ON user.user_id = tweet.user_id WHERE user.user_id IN (${followingPeopleIds}) ORDER BY date_time DESC LIMIT 4;`
-
-  const tweets = await db.all(getTweetsQuery)
-  response.send(tweets)
+  response.send(getTweetsQuery.map(item => tweetResponse(item)))
 })
 
 // API-4
 
 app.get('/user/following/', authentication, async (request, response) => {
-  const {username, userId} = request
+  const {username,userId} = request
   const getFollowingUsersQuery = `SELECT name FROM follower
 
 INNER JOIN user ON user.user_id = follower.following_user_id 
-WHERE follower_user_id = '${userId}';`
+WHERE follower_user_id='${userId}';`;
 
   const followingPeople = await db.all(getFollowingUsersQuery)
   response.send(followingPeople)
