@@ -56,24 +56,23 @@ INNER JOIN user ON user.user_id = follower.follower_user_id
 const authentication = (request, response, next) => {
   let jwtToken
   const authHeader = request.headers['authorization']
-  if (authHeader !== undefined) {
+  if (authHeader) {
     jwtToken = authHeader.split(' ')[1]
   }
-  if (jwtToken === undefined) {
-    response.status(401)
-    response.send('Invalid JWT Token')
-  } else {
-    jwt.verify(jwtToken, 'SECRET_KEY', async (error, payload) => {
+  if (jwtToken) {
+    jwt.verify(jwtToken, 'SECRET_KEY', (error, payload) => {
       if (error) {
         response.status(401)
         response.send('Invalid JWT Token')
       } else {
-        request.payload = payload
-        request.tweet = tweet
-        request.tweetId = tweetId
+        request.username = payload.username
+        request.userId = payload.userId
         next()
       }
     })
+  } else {
+    response.status(401)
+    response.send('Invalid JWT Token')
   }
 }
 
@@ -161,28 +160,35 @@ app.post('/login', async (request, response) => {
 })
 
 //api3
-const tweetResponse = dbObject => ({
-  username: dbObject.username,
-  tweet: dbObject.tweet,
-  dateTime: dbObject.dateTime,
-})
-app.get('/user/tweets/feed/', authentication, async (request, response) => {
-  const getTweetsQuery = await db.all(`SELECT user.username, 
-  tweet.tweet_id,tweet.user_id,user.username,tweet.tweet, tweet.date_time  FROM 
-  follower left join tweet on tweet.user_id=following_user_id left join user on follower.following_user_id=user.user_id where follower.follower_user-id=(select user_id from user where username='${request.username}') order by tweet.date_time desc limit 4 ;
-  `)
 
-  response.send(getTweetsQuery.map(item => tweetResponse(item)))
+app.get('/user/tweets/feed/', authentication, async (request, response) => {
+  const {username} = request
+  const followingPeopleIds = await getFollowingPeopleIdsOfUser(username)
+  const getTweetsQuery = `SELECT
+user.username, tweet.tweet, tweet.date_time AS dateTime
+FROM
+follower
+INNER JOIN tweet
+ON follower.following_user_id = tweet.user_id
+INNER JOIN user
+ON tweet.user_id = user.user_id
+WHERE
+follower.follower_user_id = ${getFollowingPeopleIdsOfUser}
+ORDER BY
+tweet.date_time DESC
+LIMIT 4;`
+  const tweets = await db.all(getTweetsQuery)
+  response.send(tweets)
 })
 
 // API-4
 
 app.get('/user/following/', authentication, async (request, response) => {
-  const {username,userId} = request
+  const {username, userId} = request
   const getFollowingUsersQuery = `SELECT name FROM follower
 
 INNER JOIN user ON user.user_id = follower.following_user_id 
-WHERE follower_user_id='${userId}';`;
+WHERE follower_user_id='${userId}';`
 
   const followingPeople = await db.all(getFollowingUsersQuery)
   response.send(followingPeople)
@@ -208,9 +214,9 @@ app.get(
   async (request, response) => {
     const {username, userId} = request
     const {tweetId} = request.params
-    const getTweetQuery = `SELECT tweet, (SELECT COUNT() FROM like WHERE tweet_id = '${tweetId}') AS likes,
+    const getTweetQuery = `SELECT tweet, (SELECT COUNT() FROM Like WHERE tweet_id = '${tweetId}') AS likes,
       (SELECT COUNT() FROM reply WHERE tweet_id = '${tweetId}') AS replies, 
-      date time AS dateTime 
+      date_time AS dateTime 
       FROM tweet 
       WHERE tweet.tweet_id = '${tweetId}';`
     const tweet = await db.get(getTweetQuery)
@@ -260,7 +266,7 @@ app.get('/user/tweets/', authentication, async (request, response) => {
 
 COUNT (DISTINCT like_id) AS likes, 
 COUNT(DISTINCT reply id) AS replies, 
-date time AS dateTime
+date_time AS dateTime
 FROM tweet LEFT JOIN reply ON tweet.tweet_id = reply.tweet_id
 
 LEFT JOIN like ON tweet.tweet_id = like.tweet_id 
@@ -279,7 +285,7 @@ app.post('/user/tweets/', authentication, async (request, response) => {
 
   const userId = parseInt(request.userId)
 
-  const dateTime = new Date().toJSON().substring(0, 19).replace('T', '')
+  const dateTime = new Date().toJSON().substring(0, 19).replace('T', ' ')
 
   const createTweetQuery = ` INSERT INTO tweet(tweet, user_id, date_time)
  VALUES('${tweet}', '${userId}', '${dateTime}')`
@@ -302,7 +308,7 @@ app.delete('/tweets/:tweetId/', authentication, async (request, response) => {
     response.status(401)
     response.send('Invalid Request')
   } else {
-    const deleteTweetQuery = `DELETE FROM tweet WHERE tweet.user_id =${userId} AND tweet.tweet_id =${tweetId};`
+    const deleteTweetQuery = `DELETE FROM tweet WHERE tweet_id =${tweetId};`
 
     await db.run(deleteTweetQuery)
     response.send('Tweet Removed')
